@@ -241,6 +241,11 @@ docker rm <container id> -> to remove container
 docker images -> images
 docker rmi -f <image name> -> to remove an image
 
+Part 14: Inspecting the images
+------------
+
+docker image inspect redis
+
 --------------------------------------------------------------------------------------------------------
 Lab 06: Complete Setup of MySQL Container
 --------------------------------------------------------------------------------------------------------
@@ -337,5 +342,398 @@ You get a really long id
 
 You can now run that manually customized container
 docker run <just use first few numbers of the id>
+
+
+--------------------------------------------------------------------------------------------------------
+Lab 06: Practice Project
+--------------------------------------------------------------------------------------------------------
+
+Step 1: Create package.json and index.js in a directory called simpleweb
+--------------------
+package.json
+{
+    "dependencies": { "express": "*"},
+    "scripts": { "start": "node index.js"}
+}
+
+index.js
+const express = require("express");
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send("Hello There");
+});
+
+app.listen(8080, () => {
+    console.log("Listening on port 8080");
+});
+
+Dockerfile
+FROM alpine
+RUN npm install
+CMD ["npm","start"]
+
+docker build .
+
+What do you see?
+
+Step 2: Fixing the error
+--------------------
+Our image is alpine and it does not have npm
+Two options: choose another base image or add a command to configure npm
+We will go with first options
+
+Docker Hub -> Search node
+docker image with pre-installed node
+node:14-alpine
+
+Let's choose node:alpine many popular repositories offer alpine version their repository
+Using just node, would install many extra things which we don't require
+
+docker build . (note: can take a while)
+
+Does the build process complete? 
+
+Step 3: Copying the files
+--------------------
+node:alpine FS snapshot doesn't have our files in the filesystem of the container
+We need the files package.json and index.js before npm build
+
+Add COPY ./ ./ into the Dockerfile before RUN
+
+docker build .
+
+Step 4: Creating work directories
+--------------------
+
+docker run -it purushotham1982/simpleweb sh
+ls -l
+
+We see the user files on the top
+It is better to organize those files to prevent unnecassary modification that can cause issues
+There fore it is better to specify work directory
+
+WORKDIR /usr/app -> if not existing it will automatically docker will automatically create for us
+All commands will be executed relative to /usr/app
+Add it before COPY
+
+docker build .
+docker run <id>
+
+Try accessing the application on the browser: localhost:8080
+
+Step 5: Port mapping
+--------------------
+Forward the request available in the host to some port in the container
+docker run -p 8080:8080 d9ae54e4bdfa
+docker run -p 3000:8080 d9ae54e4bdfa  ??
+docker run -p 8080:3000 d9ae54e4bdfa  ??
+
+Step 6: Re-builds
+--------------------
+
+Change the line in index.js
+res.send("Some text")
+Does it change on the browser on refresh? Why is that?
+
+Step 7: Minimizing cache busting 
+-------------------------
+
+When you re-build the container
+COPY ./ ./ was invalidated as there was a change to one of the source files.
+In the re-build process npm dependencies were also re-build
+This is not needed.
+
+Therefore it would be better to put COPY after RUN
+Docker will re-build only from the point the sequence changed
+
+Test this
+
+
+--------------------------------------------------------------------------------------------------------
+Lab 07: Another Practice Project -> Flask Application
+--------------------------------------------------------------------------------------------------------
+
+Preliminary studies:
+1. We need python (installed on OS) and Flask (added as a module later)
+2. Flash is third party, we need to install it
+3. Run the server manually and examine what it does
+
+Download flask application from:
+https://github.com/mindful-ai/DOCKER26092022 -> flaskapp
+
+Into the flask application directory and a Dockerfile:
+FROM alpine
+
+RUN apk add --update --no-cache python3
+RUN ln -sf python3 /usr/bin/python
+RUN python3 -m ensurepip
+RUN pip3 install --no-cache --upgrade pip setuptools
+RUN pip3 install flask
+
+WORKDIR /usr/apps
+COPY ./ ./
+EXPOSE 5000
+CMD ["python3", "server.py"]
+
+Some changes:
+app.run(host='0.0.0.0', port='5000') <- server.py
+return send_file(r"pics/kailash.jpg") -- line 25 in server.py
+
+Build and run the image:
+docker build -t purushotham1982/flasksampleapp:v01 .
+docker run -p 5000:5000 purushotham1982/flasksampleapp:v01
+
+Check on the browser: http://127.0.0.1:5000
+
+
+
+--------------------------------------------------------------------------------------------------------
+Lab 08: Pushing to Docker Hub
+--------------------------------------------------------------------------------------------------------
+
+Step 1: 
+docker login
+
+Step 2: Tag the image
+docker tag purushotham1982/nodewebapp:new purushotham1982/nodewebapp:latest
+
+Step 3: Push the image
+docker push purushotham1982/nodewebapp:latest
+
+Step 4:
+Verify in Docker Hub
+
+Step 5: 
+Try: docker run purushotham1982/nodewebapp:latest in a docker client
+
+--------------------------------------------------------------------------------------------------------
+Lab 09: Docker Compose
+--------------------------------------------------------------------------------------------------------
+
+
+Step 1: Setup the files
+package.json
+index.js
+Dockerfile
+
+Step 2:
+docker run visits
+
+Notice the error message, no redis server
+
+docker run redis
+
+In another terminal,
+docker run visits
+Same error message!!!
+
+***********************************
+
+Step 3: Docker Compose
+Create a docker-compose.yml
+version: '3'
+services:
+  redis-server:
+    image: 'redis'
+  node-app:
+    build: .
+    ports:
+      - '4001:8081'
+
+Step 4: 
+Update the connections in index.js
+const client = redis.createClient({
+  host: 'redis-server',
+  port: 6379,
+});
+
+Note: 6379 is the default port
+
+Step 5:
+
+docker-compose up -d 
+docker-compose down
+
+--------------------------------------------------------------------------------------------------------
+Lab 10: Docker Networks
+--------------------------------------------------------------------------------------------------------
+Step 1: Networking commands
+---------------------
+Creating: docker network create mynetwork
+Disconnecting: docker network disconnect mynetwork 0f8d7a833f42
+Inspecting: docker network inspect mynetwork
+Removing a network: docker network rm mynetwork
+
+Step 2: Getting the IP address of a container
+---------------------
+Step 3: Bridge Networking
+---------------------
+docker network ls
+
+# Start an nginx container, give it the name 'mynginx' and run in the background
+docker run --rm --name mynginx --detach nginx
+
+# Get the IP address of the container
+docker inspect mynginx | grep IPAddress
+
+# Run busybox (a utility container). It will join the bridge network
+docker run -it busybox sh
+
+# Fetch the nginx homepage by using the container's IP address
+busybox$ wget -q -O - 172.17.0.2:80
+
+docker network inspect bridge 
+
+Step 4: User defined Networks
+---------------------
+# Create a network called avengers
+docker network create avengers
+
+# Create a container and attach it to the network
+docker run --rm --net avengers --name thor  -d nginx
+
+# Start a busybox container so that we can test out the network
+docker run --net avengers -it busybox sh
+wget -q -O - thor:80
+
+Step 5: Netwoking in Docker Compose
+-------------------
+
+Docker Compose is a tool for running multi-container applications on Docker, 
+which are defined using the compose YAML file. You can start your applications with a single command: 
+docker-compose up.
+
+By default, Docker Compose creates a single network for each container defined in the compose file. 
+All the containers defined in the compose file connect and communicate through the default network.
+
+Let’s understand this with an example. In the following docker-compose.yaml file, we have a WordPress and a MySQL image.
+
+When deploying this setup, docker-compose maps the WordPress container port 80 to port 80 of the host as specified 
+in the compose file. We haven’t defined any custom network, so it should create one for you. 
+Run docker-compose up -d to bring up the services defined in the YAML file:
+
+docker-compose.YAML
+version: '3.7'
+services:
+  db:
+    image: mysql:8.0.19
+    command: '--default-authentication-plugin=mysql_native_password'
+    restart: always
+    volumes:
+      - db_data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=somewordpress
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=wordpress
+      - MYSQL_PASSWORD=wordpress
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - 80:80
+    restart: always
+    environment:
+      - WORDPRESS_DB_HOST=db
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wordpress
+volumes:
+  db_data:
+
+docker-compose up -d
+docker ps
+
+Now let’s inspect this network with the docker network inspect command.
+
+ docker-compose down
+
+ --------------------------------------------------------------------------------------------------------
+Lab 10: Docker Swarm
+--------------------------------------------------------------------------------------------------------
+
+Objective:
+
+
+Step 1:
+
+ifconfig
+docker swarm init --advertise-addr 172.17.0.1 --listen-addr 0.0.0.0
+The –advertise-addr flag configures the manager node to publish its address 
+The other nodes in the swarm must be able to access the manager at the IP address.
+
+Step 2:
+
+If you want to join this manager node to the worker node, 
+copy the link that you get when you initialize swarm on the worker node.
+
+docker swarm join --token SWMTKN-1-3evm0bjmiywwgsqfms8wbwvnlse7l1nl2ieit2593euo30uj2m-4fuzu5q3qh3wcf95hz684xu3n 172.17.0.1:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+
+Step 3:
+Creating an overlay network
+docker network create -d overlay myoverlaynetwork
+
+Step 4:
+
+Create a service webapp1 and use the network you have created to deploy this service over the swarm cluster.
+docker service create --name webapp1 -d --network myoverlaynetwork -p 8001:80 hshar/webapp
+
+Where -p is for port forwarding, hshar is the account name on Docker Hub, 
+and webapp is the name of the web application already present on Docker Hub.
+
+Check if the service is created or not:
+	
+docker service ls
+
+Step 5:
+
+Create a service and add to the network
+docker service create --name mysql -d --network myoverlaynetwork -p 3306:3306 hshar/mysql:5.5
+docker service ls
+
+Step 6:
+
+Check which container is working on your master node
+docker ps
+
+0107e9e7d1d4   hshar/webapp:latest ..................
+
+Get into the container and examine:
+docker exec -it 0107e9e7d1d4 bash
+nano var/www/html/index.php
+
+Step 7:
+Now, change the $servername from localhost to mysql and $password from “”” to "root", 
+and also change all fill in the database details required and save your index.php file by 
+using the keyboard shortcut Ctrl+x and after that y to save, and press enter.
+
+$servername = "mysql";
+$username = "root";
+$password = "root";
+$dbname = "HandsOn";
+$name=$_POST["course_name"];
+$phone=$_POST["course_id"];
+
+Step 8:
+Go into the mysql container which is running on another node.
+
+docker exec -it fad80ff88170 bash
+
+mysql -u root -pedureka
+
+Issue SQL commands:
+CREATE DATABASE HandsOn;
+USE HandsOn;
+CREATE TABLE course_details (course_name VARCHAR(10), course_id VARCHAR(11));
+existing
+
+Step 9:
+Go to your browser and enter the address as localhost:8001/index.php. 
+This will open up your web application. Now, enter the details of courses 
+and click on Submit Query.
+
+Step 10:
+Go back to MySQL container and check if the query has been added
 
 
